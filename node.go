@@ -29,7 +29,11 @@ func main() {
 		
 		// Buscamos candidatos con ID menor al nuestro (jerarquía)
 		// Si miID es 1, este bucle no se ejecuta y salta directo a ser líder.
-		for i := 1; i < miID; i++ {
+		for i := 1; i < 200; i++ {
+			if i == miID {
+				continue
+			}
+
 			candidato := fmt.Sprintf("hospital-%d.%s", i, dominio)
 			fmt.Printf("🔍 ¿Es [%s] el líder? Probando... ", candidato)
 			
@@ -45,7 +49,7 @@ func main() {
 
 		if liderEncontrado == "" {
 			// No hay nadie mejor que yo disponible, asumo el liderazgo
-			fmt.Printf("👑 No se hallaron líderes menores. [%s] asume la coordinación.\n", miHost)
+			fmt.Printf("👑 No se hallaron líderes. [%s] asume la coordinación.\n", miHost)
 			iniciarServidor(miHost)
 			// Si iniciarServidor retorna (error), el bucle for principal reintenta
 		} else {
