@@ -20,7 +20,7 @@ func main() {
 
 	miID, _ := strconv.Atoi(os.Args[1])
 	dominio := os.Args[2]
-	miHost := fmt.Sprintf("hospital_%d.%s", miID, dominio)
+	miHost := fmt.Sprintf("hospital-%d.%s", miID, dominio)
 
 	fmt.Printf("🏥 Nodo [%s] iniciado.\n", miHost)
 
@@ -30,7 +30,7 @@ func main() {
 		// Buscamos candidatos con ID menor al nuestro (jerarquía)
 		// Si miID es 1, este bucle no se ejecuta y salta directo a ser líder.
 		for i := 1; i < miID; i++ {
-			candidato := fmt.Sprintf("hospital_%d.%s", i, dominio)
+			candidato := fmt.Sprintf("hospital-%d.%s", i, dominio)
 			fmt.Printf("🔍 ¿Es [%s] el líder? Probando... ", candidato)
 			
 			conn, err := net.DialTimeout("tcp", candidato+Puerto, 1*time.Second)
