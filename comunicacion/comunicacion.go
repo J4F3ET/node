@@ -85,7 +85,7 @@ func IniciarServidorMedico(host string) {
 }
 
 func EnviarDatosMedicos(destino, miHost string, miID int) error {
-	conn, err := net.DialTimeout("tcp", destino+config.PuertoServicio, 2*time.Second)
+	conn, err := net.DialTimeout("tcp", destino+config.PuertoServicio, 3*time.Second)
 	if err != nil {
 		return fmt.Errorf("error de conexión: %w", err)
 	}

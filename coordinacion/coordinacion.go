@@ -7,10 +7,12 @@ import (
 	"net"
 	"node/comunicacion"
 	"node/config"
+	"sync"
 	"time"
 )
 
 func ServicioCoordinacion(miID int, dominio, miHost string, chanLider chan string) {
+	var mu sync.Mutex
 	liderLocal := ""
 	ultimoLatido := time.Now()
 	soyLider := false
@@ -32,6 +34,9 @@ func ServicioCoordinacion(miID int, dominio, miHost string, chanLider chan strin
 				defer c.Close()
 				var msg comunicacion.Mensaje
 				if err := json.NewDecoder(c).Decode(&msg); err == nil {
+					mu.Lock()
+					defer mu.Unlock()
+
 					// Lógica de supresión de líderes duplicados
 					if msg.ID < miID && soyLider {
 						log.Printf("[COORD] Detectado líder con mayor prioridad (%s). Abdicando...", msg.Host)
@@ -61,9 +66,11 @@ func ServicioCoordinacion(miID int, dominio, miHost string, chanLider chan strin
 
 	ticker := time.NewTicker(1 * time.Second)
 	for range ticker.C {
-		if !soyLider && (liderLocal == "" || time.Since(ultimoLatido) > config.ElectionTimeout) {
+		mu.Lock()
+		since := time.Since(ultimoLatido)
+		if !soyLider && (liderLocal == "" || since > config.ElectionTimeout) {
 			if liderLocal != "" {
-				log.Printf("[COORD] Tiempo de espera de líder %s agotado. Iniciando elección...", liderLocal)
+				log.Printf("[COORD] Tiempo de espera de líder %s agotado (%v). Iniciando elección...", liderLocal, since)
 				liderLocal = ""
 				select {
 				case chanLider <- "":
@@ -73,20 +80,42 @@ func ServicioCoordinacion(miID int, dominio, miHost string, chanLider chan strin
 			log.Println("[COORD] Sin líder. Iniciando elección...")
 			soyElMasBajo := true
 
+			// Escaneo en paralelo para evitar bloqueos y detectar al líder más rápido
+			results := make(chan int, miID)
+			var wg sync.WaitGroup
 			for i := 1; i < miID; i++ {
-				candidato := fmt.Sprintf("hospital-%d.%s", i, dominio)
-				conn, err := net.DialTimeout("tcp", candidato+config.PuertoServicio, config.DefaultTimeout)
-				if err == nil {
-					conn.Close()
-					liderLocal = candidato
-					ultimoLatido = time.Now()
-					select {
-					case chanLider <- candidato:
-					default:
+				wg.Add(1)
+				go func(id int) {
+					defer wg.Done()
+					candidato := fmt.Sprintf("hospital-%d.%s", id, dominio)
+					conn, err := net.DialTimeout("tcp", candidato+config.PuertoServicio, config.DefaultTimeout)
+					if err == nil {
+						conn.Close()
+						results <- id
 					}
-					soyElMasBajo = false
-					log.Printf("[COORD] Líder encontrado (ID menor): %s", liderLocal)
-					break
+				}(i)
+			}
+
+			go func() {
+				wg.Wait()
+				close(results)
+			}()
+
+			minIDFound := miID
+			for id := range results {
+				if id < minIDFound {
+					minIDFound = id
+				}
+			}
+
+			if minIDFound < miID {
+				liderLocal = fmt.Sprintf("hospital-%d.%s", minIDFound, dominio)
+				ultimoLatido = time.Now()
+				soyElMasBajo = false
+				log.Printf("[COORD] Líder encontrado (ID menor): %s", liderLocal)
+				select {
+				case chanLider <- liderLocal:
+				default:
 				}
 			}
 
@@ -103,20 +132,28 @@ func ServicioCoordinacion(miID int, dominio, miHost string, chanLider chan strin
 				log.Printf("[COORD] Yo soy el líder: %s", miHost)
 			}
 		}
+		
+		currentSoyLider := soyLider
+		mu.Unlock()
 
-		if soyLider {
+		if currentSoyLider {
 			NotificarPares(miID, dominio, miHost)
 		}
 	}
 }
 
 func NotificarPares(miID int, dominio, miHost string) {
+	// Semáforo para limitar la concurrencia y evitar saturar el stack TCP de Tailscale
+	sem := make(chan struct{}, 20)
 	for i := 1; i <= config.MaxNodes; i++ {
 		if i == miID {
 			continue
 		}
 		peer := fmt.Sprintf("hospital-%d.%s", i, dominio)
 		go func(p string) {
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
 			conn, err := net.DialTimeout("tcp", p+config.PuertoCoordinacion, 100*time.Millisecond)
 			if err != nil {
 				return
