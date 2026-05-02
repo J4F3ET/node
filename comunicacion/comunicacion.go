@@ -1,13 +1,21 @@
 package comunicacion
 
 import (
-	"bufio"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net"
 	"node/config"
 	"time"
 )
+
+// Mensaje es la estructura universal para la comunicación entre nodos
+type Mensaje struct {
+	Tipo    string `json:"tipo"`    // "DATA" o "HEARTBEAT"
+	ID      int    `json:"id"`      // ID del emisor
+	Host    string `json:"host"`    // Hostname del emisor
+	Contenido string `json:"contenido,omitempty"`
+}
 
 func ServicioComunicacion(miHost string, chanLider chan string) {
 	var liderActual string
@@ -40,7 +48,7 @@ func ServicioComunicacion(miHost string, chanLider chan string) {
 				continue
 			}
 
-			err := EnviarDatosMedicos(liderActual, miHost)
+			err := EnviarDatosMedicos(liderActual, miHost, 0) // El ID real lo manejaremos en la struct
 			if err != nil {
 				log.Printf("🚨 [COM] Líder %s inalcanzable al enviar datos: %v", liderActual, err)
 				tieneLider = false
@@ -67,32 +75,32 @@ func IniciarServidorMedico(host string) {
 		}
 		go func(c net.Conn) {
 			defer c.Close()
-			message, err := bufio.NewReader(c).ReadString('\n')
-			if err != nil {
-				log.Printf("[SERVER] Error al leer datos: %v", err)
-				return
+			var msg Mensaje
+			if err := json.NewDecoder(c).Decode(&msg); err == nil {
+				log.Printf("[SERVER] Datos médicos de %s (ID: %d): %s", msg.Host, msg.ID, msg.Contenido)
 			}
-			log.Printf("[SERVER] Recibido de %s: %s", c.RemoteAddr(), message)
 			c.Write([]byte("ACK\n"))
 		}(conn)
 	}
 }
 
-func EnviarDatosMedicos(destino, miHost string) error {
+func EnviarDatosMedicos(destino, miHost string, miID int) error {
 	conn, err := net.DialTimeout("tcp", destino+config.PuertoServicio, 2*time.Second)
 	if err != nil {
 		return fmt.Errorf("error de conexión: %w", err)
 	}
 	defer conn.Close()
 
-	_, err = fmt.Fprintf(conn, "DATA: %s reportando signos vitales.\n", miHost)
-	if err != nil {
-		return fmt.Errorf("error de envío: %w", err)
+	msg := Mensaje{
+		Tipo:      "DATA",
+		ID:        miID,
+		Host:      miHost,
+		Contenido: "Signos vitales normales (Simulado)",
 	}
 
-	_, err = bufio.NewReader(conn).ReadString('\n')
+	err = json.NewEncoder(conn).Encode(msg)
 	if err != nil {
-		return fmt.Errorf("error de ACK: %w", err)
+		return fmt.Errorf("error de envío: %w", err)
 	}
 	return nil
 }

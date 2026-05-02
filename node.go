@@ -3,11 +3,13 @@ package main
 import (
 	"fmt"
 	"log"
+	"net"
 	"node/comunicacion"
 	"node/config"
 	"node/coordinacion"
 	"os"
 	"strconv"
+	"time"
 )
 
 func main() {
@@ -24,6 +26,13 @@ func main() {
 	dominio := os.Args[2]
 	// Usamos hospital- para coincidir con el hostname de Tailscale y los subpaquetes
 	miHost := fmt.Sprintf("hospital-%d.%s", miID, dominio)
+
+	// Verificación de unicidad: ¿Alguien más está usando este ID en la red?
+	conn, err := net.DialTimeout("tcp", miHost+config.PuertoServicio, 2*time.Second)
+	if err == nil {
+		conn.Close()
+		log.Fatalf("❌ ERROR: El ID %d ya está en uso por otro nodo activo en la red (%s). Abortando para evitar conflictos.", miID, miHost)
+	}
 
 	chanLider := make(chan string)
 

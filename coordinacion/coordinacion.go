@@ -1,7 +1,7 @@
 package coordinacion
 
 import (
-	"bufio"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net"
@@ -12,9 +12,10 @@ import (
 
 func ServicioCoordinacion(miID int, dominio, miHost string, chanLider chan string) {
 	liderLocal := ""
-	checkInterval := 5 * time.Second
+	var ultimoLatido time.Time
+	soyLider := false
 
-	// Escuchar anuncios de otros líderes
+	// Escuchar latidos de líderes (Broadcast simulado)
 	go func() {
 		ln, err := net.Listen("tcp", config.PuertoCoordinacion)
 		if err != nil {
@@ -29,22 +30,32 @@ func ServicioCoordinacion(miID int, dominio, miHost string, chanLider chan strin
 			}
 			go func(c net.Conn) {
 				defer c.Close()
-				scanner := bufio.NewScanner(c)
-				if scanner.Scan() {
-					nuevoLider := scanner.Text()
-					if nuevoLider != liderLocal {
-						liderLocal = nuevoLider
-						chanLider <- nuevoLider
-						log.Printf("[COORD] Nuevo líder detectado vía red: %s", nuevoLider)
+				var msg comunicacion.Mensaje
+				if err := json.NewDecoder(c).Decode(&msg); err == nil {
+					// Lógica de supresión de líderes duplicados
+					if msg.ID < miID && soyLider {
+						log.Printf("[COORD] Detectado líder con mayor prioridad (%s). Abdicando...", msg.Host)
+						soyLider = false
+						liderLocal = msg.Host
+						chanLider <- liderLocal
+					}
+					
+					if msg.ID <= miID { // Aceptamos al líder si tiene igual o mayor prioridad
+						ultimoLatido = time.Now()
+						if liderLocal != msg.Host {
+							liderLocal = msg.Host
+							chanLider <- liderLocal
+							log.Printf("[COORD] Siguiendo a nuevo líder: %s", liderLocal)
+						}
 					}
 				}
 			}(conn)
 		}
 	}()
 
-	ticker := time.NewTicker(checkInterval)
+	ticker := time.NewTicker(1 * time.Second)
 	for range ticker.C {
-		if liderLocal == "" {
+		if !soyLider && (liderLocal == "" || time.Since(ultimoLatido) > config.ElectionTimeout) {
 			log.Println("[COORD] Sin líder. Iniciando elección...")
 			soyElMasBajo := true
 
@@ -63,21 +74,15 @@ func ServicioCoordinacion(miID int, dominio, miHost string, chanLider chan strin
 
 			if soyElMasBajo {
 				liderLocal = miHost
+				soyLider = true
 				go comunicacion.IniciarServidorMedico(miHost)
-				NotificarPares(miID, dominio, miHost)
 				chanLider <- miHost
 				log.Printf("[COORD] Yo soy el líder: %s", miHost)
 			}
-		} else if liderLocal != miHost {
-			// Verificar salud del líder actual
-			conn, err := net.DialTimeout("tcp", liderLocal+config.PuertoServicio, 1*time.Second)
-			if err != nil {
-				log.Printf("[COORD] Líder %s caído. Reiniciando elección.", liderLocal)
-				liderLocal = ""
-				chanLider <- ""
-			} else {
-				conn.Close()
-			}
+		}
+
+		if soyLider {
+			NotificarPares(miID, dominio, miHost)
 		}
 	}
 }
@@ -89,12 +94,18 @@ func NotificarPares(miID int, dominio, miHost string) {
 		}
 		peer := fmt.Sprintf("hospital-%d.%s", i, dominio)
 		go func(p string) {
-			conn, err := net.DialTimeout("tcp", p+config.PuertoCoordinacion, 200*time.Millisecond)
+			conn, err := net.DialTimeout("tcp", p+config.PuertoCoordinacion, 100*time.Millisecond)
 			if err != nil {
 				return
 			}
 			defer conn.Close()
-			fmt.Fprintf(conn, "%s\n", miHost)
+			
+			msg := comunicacion.Mensaje{
+				Tipo: "HEARTBEAT",
+				ID:   miID,
+				Host: miHost,
+			}
+			json.NewEncoder(conn).Encode(msg)
 		}(peer)
 	}
 }

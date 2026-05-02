@@ -1,4 +1,12 @@
-Como crear un nodo
+# Sistema de Monitoreo Médico Distribuido
+
+Este proyecto implementa un sistema distribuido en Go para la coordinación y envío de datos médicos en tiempo real. Utiliza un algoritmo de elección de líder basado en prioridades (ID más bajo) y comunicación TCP sobre una red privada Tailscale.
+
+## Requisitos previos
+- Proxmox VE
+- Cuenta en Tailscale
+
+## Configuración del Nodo (LXC)
 - Primero crea LXC con el siguiente comando:
 ```bash
 pct create 110 local:vztmpl/debian-12-standard_12.7-1_amd64.tar.zst \
