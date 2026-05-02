@@ -12,7 +12,7 @@ import (
 
 func ServicioCoordinacion(miID int, dominio, miHost string, chanLider chan string) {
 	liderLocal := ""
-	var ultimoLatido time.Time
+	ultimoLatido := time.Now()
 	soyLider := false
 
 	// Escuchar latidos de líderes (Broadcast simulado)
@@ -37,7 +37,10 @@ func ServicioCoordinacion(miID int, dominio, miHost string, chanLider chan strin
 						log.Printf("[COORD] Detectado líder con mayor prioridad (%s). Abdicando...", msg.Host)
 						soyLider = false
 						liderLocal = msg.Host
-						chanLider <- liderLocal
+						select {
+						case chanLider <- liderLocal:
+						default:
+						}
 					}
 					
 					if msg.ID <= miID { // Aceptamos al líder si tiene igual o mayor prioridad
@@ -76,7 +79,11 @@ func ServicioCoordinacion(miID int, dominio, miHost string, chanLider chan strin
 				if err == nil {
 					conn.Close()
 					liderLocal = candidato
-					chanLider <- candidato
+					ultimoLatido = time.Now()
+					select {
+					case chanLider <- candidato:
+					default:
+					}
 					soyElMasBajo = false
 					log.Printf("[COORD] Líder encontrado (ID menor): %s", liderLocal)
 					break
