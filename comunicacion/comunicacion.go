@@ -17,7 +17,7 @@ type Mensaje struct {
 	Contenido string `json:"contenido,omitempty"`
 }
 
-func ServicioComunicacion(miHost string, chanLider chan string) {
+func ServicioComunicacion(miID int, miHost string, chanLider chan string) {
 	var liderActual string
 	tieneLider := false
 	dataSendInterval := 5 * time.Second
@@ -48,11 +48,11 @@ func ServicioComunicacion(miHost string, chanLider chan string) {
 				continue
 			}
 
-			err := EnviarDatosMedicos(liderActual, miHost, 0) // El ID real lo manejaremos en la struct
+			err := EnviarDatosMedicos(liderActual, miHost, miID)
 			if err != nil {
 				log.Printf("🚨 [COM] Líder %s inalcanzable al enviar datos: %v", liderActual, err)
-				tieneLider = false
-				liderActual = ""
+				// No reseteamos el líder aquí; la coordinación decidirá si el líder murió
+				// por la ausencia de Heartbeats (ElectionTimeout).
 			}
 		}
 	}

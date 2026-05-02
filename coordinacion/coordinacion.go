@@ -44,7 +44,10 @@ func ServicioCoordinacion(miID int, dominio, miHost string, chanLider chan strin
 						ultimoLatido = time.Now()
 						if liderLocal != msg.Host {
 							liderLocal = msg.Host
-							chanLider <- liderLocal
+							select {
+							case chanLider <- liderLocal:
+							default:
+							}
 							log.Printf("[COORD] Siguiendo a nuevo líder: %s", liderLocal)
 						}
 					}
@@ -56,6 +59,14 @@ func ServicioCoordinacion(miID int, dominio, miHost string, chanLider chan strin
 	ticker := time.NewTicker(1 * time.Second)
 	for range ticker.C {
 		if !soyLider && (liderLocal == "" || time.Since(ultimoLatido) > config.ElectionTimeout) {
+			if liderLocal != "" {
+				log.Printf("[COORD] Tiempo de espera de líder %s agotado. Iniciando elección...", liderLocal)
+				liderLocal = ""
+				select {
+				case chanLider <- "":
+				default:
+				}
+			}
 			log.Println("[COORD] Sin líder. Iniciando elección...")
 			soyElMasBajo := true
 
@@ -74,9 +85,14 @@ func ServicioCoordinacion(miID int, dominio, miHost string, chanLider chan strin
 
 			if soyElMasBajo {
 				liderLocal = miHost
-				soyLider = true
-				go comunicacion.IniciarServidorMedico(miHost)
-				chanLider <- miHost
+				if !soyLider {
+					soyLider = true
+					go comunicacion.IniciarServidorMedico(miHost)
+					select {
+					case chanLider <- miHost:
+					default:
+					}
+				}
 				log.Printf("[COORD] Yo soy el líder: %s", miHost)
 			}
 		}

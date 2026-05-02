@@ -34,10 +34,10 @@ func main() {
 		log.Fatalf("❌ ERROR: El ID %d ya está en uso por otro nodo activo en la red (%s). Abortando para evitar conflictos.", miID, miHost)
 	}
 
-	chanLider := make(chan string)
+	chanLider := make(chan string, 1) // Canal con buffer para evitar bloqueos
 
 	fmt.Printf("🚀 Nodo [%s] en línea.\n", miHost)
 
 	go coordinacion.ServicioCoordinacion(miID, dominio, miHost, chanLider)
-	comunicacion.ServicioComunicacion(miHost, chanLider)
+	comunicacion.ServicioComunicacion(miID, miHost, chanLider)
 }
