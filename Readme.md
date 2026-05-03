@@ -60,6 +60,31 @@ pct exec 110 -- apt install golang-go -y
 pct exec 110 -- bash -c "go build ~/node/node.go <NUMERO_DE_NODO> <DOMINIO-TAILNET> "
 pct exec 110 -- bash -c "go build ~/node/node.go 1 tail5afc32.ts.net "
 ```
+
+## Solución de Problemas de Conectividad (Windows -> LXC)
+Si no puedes hacer ping a un nodo específico desde Windows:
+
+1. **Prueba de IP Directa:** Intenta `ping 100.x.x.x` (IP de Tailscale) en lugar de usar el hostname. Si funciona, es un problema de MagicDNS.
+2. **Verificar TUN en Proxmox:** Asegúrate de que el archivo `/etc/pve/lxc/<ID>.conf` contenga:
+   ```text
+   lxc.cgroup2.devices.allow: c 10:200 rwm
+   lxc.mount.entry: /dev/net/tun dev/net/tun none bind,create=file
+   ```
+3. **Estado del Túnel:** Ejecuta `tailscale status` en Windows y en el LXC. Ambos deben verse como "active" o "idle".
+4. **Re-autenticación:** Si el nodo aparece pero no hay tráfico, intenta:
+   `tailscale up --reset --hostname hospital-<NODO>` dentro del LXC.
+5. **Rutas de Windows:** En CMD (Admin) de Windows, verifica que la ruta esté presente: `route print -4` (debe aparecer el rango `100.64.0.0/10` apuntando a la interfaz de Tailscale).
+6. **Firewall Interno (LXC):** Asegúrate de que `ufw` o `iptables` permitan los puertos:
+   ```bash
+   # En el contenedor LXC si usas UFW
+   ufw allow 5000/tcp
+   ufw allow 5001/tcp
+   ```
+   En **Windows**, crea una regla de entrada para los puertos TCP 5000 y 5001.
+
+## Arquitectura
+1. **Coordinación:** Puerto 5001 (Heartbeats JSON).
+2. **Servicio:** Puerto 5000 (Datos Médicos JSON).
 > **NOTE**
 > - La app se ejecutará en el puerto 5000
 > - De acuerdo al numero y dominio de la tailnet el nodo se encontraria como  `hospital-<NUMERO_DE_NODO>.<DOMINIO-TAILNET>:5000`

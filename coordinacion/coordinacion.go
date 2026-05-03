@@ -154,7 +154,7 @@ func NotificarPares(miID int, dominio, miHost string) {
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
-			conn, err := net.DialTimeout("tcp", p+config.PuertoCoordinacion, 100*time.Millisecond)
+			conn, err := net.DialTimeout("tcp", p+config.PuertoCoordinacion, config.DefaultTimeout)
 			if err != nil {
 				return
 			}
