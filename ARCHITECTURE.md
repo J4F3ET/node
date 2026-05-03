@@ -1,69 +1,105 @@
 # Arquitectura del Sistema: Nodos de Monitoreo Médico
 
-Este diagrama describe la arquitectura interna de un nodo y cómo interactúan múltiples instancias dentro de la **Tailnet**.
+Este documento detalla la infraestructura distribuida y la lógica interna de los nodos que operan sobre la red privada **Tailscale**.
+
+## 1. Topología de Red (Vista Externa)
+Esta vista representa la interacción entre los 4 nodos del laboratorio distribuidos en la **SD-WAN**.
 
 ```mermaid
-flowchart TB
-    subgraph Tailscale ["🌐 Red Privada Tailscale (MagicDNS)"]
+
+flowchart LR
+    subgraph TailscaleCloud ["🌩️ RED PRIVADA TAILSCALE (MagicDNS)"]
+        direction LR
         
-        subgraph Leader ["👑 Nodo Líder (ID Menor)"]
-            L_Main["⚙️ node.go"]
-            L_Config["📄 config.go"]
-            L_Coord(("🔄 Coordinación<br>:5001"))
-            L_Comm(("📡 Comunicación<br>:5000"))
-            L_Server["🖥️ Servidor Médico"]
-            L_Relay{"📢 Relay Logic"}
-            
-            L_Config -.-> L_Main
-            L_Main --> L_Coord
-            L_Main --> L_Comm
-            L_Coord -. "chanLider<br>(Soy Yo)" .-> L_Comm
-            L_Comm === L_Server
+        subgraph Seguid ["🏥 SEGUIDORES (IDs: 2-199)"]
+            direction TB
+            Node2["hospital-2"]
+            Node3["hospital-3"]
+            Node4["hospital-4"]
         end
 
-        subgraph Follower ["🏥 Nodo Seguidor (ID Mayor)"]
-            F_Main["⚙️ node.go"]
-            F_Config["📄 config.go"]
-            F_Coord(("🔄 Coordinación<br>:5001"))
-            F_Comm(("📡 Comunicación<br>:5000"))
-            F_Client["💻 Cliente Médico"]
-            F_Server["🖥️ Servidor Médico"]
-            
-            F_Config -.-> F_Main
-            F_Main --> F_Coord
-            F_Main --> F_Comm
-            F_Coord -. "chanLider<br>(ID Líder)" .-> F_Comm
-            F_Comm === F_Client
-            F_Comm === F_Server
-        end
+        Leader["👑 LÍDER (ID: 1)<br/>hospital-1"]
 
-        %% Conexiones de Red entre Nodos
-        L_Coord == "1. Heartbeat Broadcast<br>(TCP/5001)" ===> F_Coord
-        F_Coord -. "3. Elección por Timeout<br>(Bully)" .-> L_Coord
-        F_Client == "2a. Datos/Mensajes Manuales<br>(TCP/5000)" ===> L_Server
-        L_Server --> L_Relay -->| "2b. Retransmisión Global" | F_Server
-
+        %% Flujo de datos y control
+        Seguid -- "1. Datos/Mensajes (5000)" --> Leader
+        Leader -. "2. Heartbeats (5001)" .-> Seguid
+        Leader == "3. Relay Broadcast (5000)" ==> Seguid
     end
 
-    %% Estilos GitHub-Safe (Sin forzar color de texto para soportar Dark Mode)
-    classDef leader fill:#e6f4ea,stroke:#1e8e3e,stroke-width:2px;
-    classDef follower fill:#e8f0fe,stroke:#1a73e8,stroke-width:2px;
-    classDef tailscale fill:#f8f9fa,stroke:#80868b,stroke-width:2px,stroke-dasharray: 5 5;
-    classDef module fill:#ffffff,stroke:#cccccc,stroke-width:1px;
+    %% Definición de estilos (Obligatorio para que funcionen las clases)
+    classDef leader fill:#1b5e20,stroke:#81c784,stroke-width:2px,color:#ffffff;
+    classDef follower fill:#0d47a1,stroke:#64b5f6,stroke-width:2px,color:#ffffff;
 
     class Leader leader;
-    class Follower follower;
-    class Tailscale tailscale;
-    class L_Main,L_Config,F_Main,F_Config,L_Server,F_Server,F_Client module;
+    class Node2,Node3,Node4 follower;
 ```
-## Descripción de Componentes
 
-1.  **Capa de Orquestación (`node.go`):** Inicializa el nodo, valida que el hostname `hospital-ID` sea único en la red y lanza los servicios concurrentes.
-2.  **Módulo de Coordinación:**
-    - Implementa el algoritmo de Bully. 
-    - El **Líder** notifica su presencia mediante latidos constantes al puerto `5001`.
-    - El **Seguidor** vigila el `ElectionTimeout`. Si se agota, escanea a los nodos con ID menor.
-3.  **Módulo de Comunicación:** 
-    - Utiliza un canal (`chanLider`) para recibir actualizaciones de estado.
-    - Si es seguidor, actúa como cliente enviando JSON al puerto `5000`.
-    - Si es líder, activa el servidor de recepción de datos.
+## 2. Flujo de Ejecución e Inter-comunicación (Goroutines)
+Describe cómo el punto de entrada `node.go` orquesta los módulos internos y utiliza canales para sincronizar el estado del liderazgo[cite: 9, 10].
+
+```mermaid
+%%{init: {'theme': 'dark'}}%%
+sequenceDiagram
+    autonumber
+    box rgb(40, 40, 40) Entorno Local del Nodo
+        participant Main as ⚙️ node.go
+        participant Server as 🏥 Servidor Médico
+        participant Coord as 🔄 coordinacion.go
+        participant Comm as 📡 comunicacion.go
+        participant Input as 💬 Entrada Manual
+    end
+    participant Red as 🌐 Red Tailscale
+
+    Main->>Main: Valida ID y Unicidad (1-199)
+    Main->>Server: go IniciarServidorMedico() (Siempre Activo)
+    Main->>Coord: go ServicioCoordinacion()
+    Main->>Comm: go ServicioComunicacion()
+    Main->>Input: go ServicioEntradaManual()
+
+    Note over Coord, Red: Lógica de Liderazgo (Bully Modificado)
+    Coord->>Red: Difusión Heartbeat (Puerto 5001)
+
+    Note over Input, Comm: Lógica de Mensajería y Relay
+    Input->>Comm: Texto ingresado por usuario
+    Comm->>Red: Envío al Líder (Puerto 5000)
+    Red->>Server: Recepción en el Líder
+    Server->>Red: Retransmisión (Relay) a todos los demás
+```
+
+## 3. Lógica del Algoritmo de Elección (Estados)
+Representa el ciclo de vida del nodo y las condiciones de transición basadas en el algoritmo de **Bully modificado**.
+
+```mermaid
+%%{init: {'theme': 'dark'}}%%
+stateDiagram-v2
+    [*] --> INICIO: Inicia ejecución
+    INICIO --> STANDBY: Validación de identidad
+    
+    state STANDBY {
+        [*] --> EsperandoHeartbeat
+        EsperandoHeartbeat --> AnalizandoLatidos: Puerto 5001
+    }
+    
+    STANDBY --> ELECCION: ElectionTimeout (10s)
+    
+    state ELECCION {
+        [*] --> EscaneoRed: Contacta IDs menores
+    }
+    
+    ELECCION --> SEGUIDOR: Nodo menor activo detectado
+    ELECCION --> LIDER: No hay IDs menores disponibles
+    
+    state LIDER {
+        [*] --> DifusionHeartbeat: Intervalo 2s
+    }
+    
+    LIDER --> SEGUIDOR: Abdicación (ID menor aparece)
+    SEGUIDOR --> ELECCION: Fallo de latido detectado
+```
+
+---
+
+### Notas Técnicas Adicionales
+*   **Concurrencia:** El uso de Goroutines independientes permite que la detección de fallos (coordinación) no bloquee la recolección de signos vitales (comunicación).
+*   **Seguridad:** Toda la comunicación ocurre dentro de la interfaz virtual de Tailscale, utilizando **MagicDNS** para la resolución de hostnames dinámicos.
+*   **Timeouts:** El `ElectionTimeout` está configurado en **10 segundos** para tolerar latencias en la red SD-WAN.
