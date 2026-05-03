@@ -8,7 +8,7 @@ A diferencia de versiones anteriores, el módulo ahora utiliza una estructura pr
 
 - **Estado de Salud:** Rastrea el `ultimoLatido` y el nombre del `liderLocal`.
 - **Concurrencia:** Utiliza `sync.Mutex` para proteger el acceso al estado durante las elecciones y la recepción de mensajes.
-- **Comunicación Interna:** Actualiza al módulo de comunicación a través de un canal no bloqueante (`chanLider`).
+- **Comunicación Interna:** Sincroniza el estado con el módulo de comunicación mediante un canal no bloqueante (`chanLider`) que garantiza siempre la entrega del líder más reciente (Last-Write-Wins).
 
 ## Mecanismos de Liderazgo
 
@@ -16,7 +16,7 @@ A diferencia de versiones anteriores, el módulo ahora utiliza una estructura pr
 Un temporizador (Ticker) ejecuta esta función cada segundo para:
 - Verificar si el tiempo transcurrido desde el último latido supera el `ElectionTimeout`.
 - Disparar una nueva elección si el líder actual se considera "muerto" o no existe.
-- Si el nodo local es el líder, dispara la notificación de latidos a los pares.
+- Si el nodo local es el líder, dispara la difusión de latidos (`notificarPares`).
 
 ### 2. Algoritmo de Elección (`iniciarEleccion`)
 Cuando se inicia una elección, el nodo realiza un escaneo paralelo:
@@ -28,7 +28,19 @@ Cuando se inicia una elección, el nodo realiza un escaneo paralelo:
 ### 3. Gestión de Mensajes (`manejarConexion`)
 El servidor de coordinación escucha en el puerto `5001` (`tcp4`) y procesa:
 - **Supresión de Líderes:** Si el nodo es líder pero recibe un mensaje de un ID menor, abdica inmediatamente (`📉`) para mantener la jerarquía.
-- **Seguimiento:** Actualiza el timestamp de vida del líder actual y sincroniza el estado local.
+- **Sincronización de Estado:** Al detectar un cambio de líder, actualiza `liderLocal` de forma atómica antes de notificar al canal, evitando bucles infinitos de re-seguimiento.
+- **Logs de Latidos:** Muestra información en tiempo real de los mensajes `HEARTBEAT` recibidos del líder actual.
+
+### 4. Difusión de Latidos (`notificarPares`)
+Este mecanismo resuelve la incertidumbre sobre qué nodos están activos en la red:
+- **Escaneo de Rango:** El líder intenta conectar con todos los posibles hosts de la red (basado en `config.MaxNodes`, por defecto 1-199).
+- **Conexión Efímera:** Se utiliza un `DialTimeout` corto (2 segundos). Si un nodo no está activo, el error se ignora silenciosamente y se continúa con el siguiente.
+- **Optimización de Recursos:** Implementa un **semáforo de concurrencia** (límite de 20 goroutines) para evitar saturar el stack TCP de la interfaz virtual (Tailscale) durante la ráfaga de latidos.
+
+### 5. Actualización del Canal (`actualizarLider`)
+Para evitar bloqueos por lentitud en el módulo de comunicación, esta función:
+1. Vacía cualquier valor antiguo presente en el canal `chanLider`.
+2. Inserta el nuevo host de forma no bloqueante.
 
 ## Significado de los Logs (Iconografía)
 
