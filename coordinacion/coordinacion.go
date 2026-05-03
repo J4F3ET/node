@@ -19,7 +19,7 @@ func ServicioCoordinacion(miID int, dominio, miHost string, chanLider chan strin
 
 	// Escuchar latidos de líderes (Broadcast simulado)
 	go func() {
-		ln, err := net.Listen("tcp", config.PuertoCoordinacion)
+		ln, err := net.Listen("tcp4", config.PuertoCoordinacion)
 		if err != nil {
 			log.Fatalf("🚨 [COORD] Fallo en listener de coordinación: %v", err)
 		}
@@ -94,7 +94,7 @@ func ServicioCoordinacion(miID int, dominio, miHost string, chanLider chan strin
 				go func(id int) {
 					defer wg.Done()
 					candidato := fmt.Sprintf("hospital-%d.%s", id, dominio)
-					conn, err := net.DialTimeout("tcp", candidato+config.PuertoServicio, config.DefaultTimeout)
+					conn, err := net.DialTimeout("tcp4", candidato+config.PuertoServicio, config.DefaultTimeout)
 					if err == nil {
 						remoteIP := conn.RemoteAddr().String()
 						log.Printf("🔍 [COORD] Nodo detectado: %s en %s", candidato, remoteIP)
@@ -162,7 +162,7 @@ func NotificarPares(miID int, dominio, miHost, info string) {
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
-			conn, err := net.DialTimeout("tcp", p+config.PuertoCoordinacion, config.DefaultTimeout)
+			conn, err := net.DialTimeout("tcp4", p+config.PuertoCoordinacion, config.DefaultTimeout)
 			if err != nil {
 				return
 			}

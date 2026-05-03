@@ -59,9 +59,10 @@ func ServicioComunicacion(miID int, miHost string, chanLider chan string) {
 }
 
 func IniciarServidorMedico(host string) {
-	ln, err := net.Listen("tcp", config.PuertoServicio)
+	// Escuchamos explícitamente en tcp4 para evitar problemas de dual-stack en Windows
+	ln, err := net.Listen("tcp4", config.PuertoServicio)
 	if err != nil {
-		log.Printf("Error al iniciar el servidor médico en %s: %v", host, err)
+		log.Printf("🚨 [SERVER] Error crítico al iniciar servidor médico en %s: %v", host, err)
 		return
 	}
 	defer ln.Close()
@@ -88,7 +89,7 @@ func IniciarServidorMedico(host string) {
 func EnviarDatosMedicos(destino, miHost string, miID int) error {
 	conn, err := net.DialTimeout("tcp", destino+config.PuertoServicio, 3*time.Second)
 	if err != nil {
-		return fmt.Errorf("error de conexión: %w", err)
+		return fmt.Errorf("error de conexión a %s: %w", destino, err)
 	}
 	defer conn.Close()
 
