@@ -21,7 +21,7 @@ func ServicioCoordinacion(miID int, dominio, miHost string, chanLider chan strin
 	go func() {
 		ln, err := net.Listen("tcp", config.PuertoCoordinacion)
 		if err != nil {
-			log.Fatalf("Fallo en listener de coordinación: %v", err)
+			log.Fatalf("🚨 [COORD] Fallo en listener de coordinación: %v", err)
 		}
 		defer ln.Close()
 
@@ -32,6 +32,7 @@ func ServicioCoordinacion(miID int, dominio, miHost string, chanLider chan strin
 			}
 			go func(c net.Conn) {
 				defer c.Close()
+				remoteAddr := c.RemoteAddr().String()
 				var msg comunicacion.Mensaje
 				if err := json.NewDecoder(c).Decode(&msg); err == nil {
 					mu.Lock()
@@ -39,7 +40,7 @@ func ServicioCoordinacion(miID int, dominio, miHost string, chanLider chan strin
 
 					// Lógica de supresión de líderes duplicados
 					if msg.ID < miID && soyLider {
-						log.Printf("[COORD] Detectado líder con mayor prioridad (%s). Abdicando...", msg.Host)
+						log.Printf("📉 [COORD] Detectado líder con mayor prioridad (%s - %s). Abdicando...", msg.Host, remoteAddr)
 						soyLider = false
 						liderLocal = msg.Host
 						select {
@@ -56,8 +57,13 @@ func ServicioCoordinacion(miID int, dominio, miHost string, chanLider chan strin
 							case chanLider <- liderLocal:
 							default:
 							}
-							log.Printf("[COORD] Siguiendo a nuevo líder: %s", liderLocal)
+							log.Printf("🔭 [COORD] Siguiendo a nuevo líder: %s (%s)", liderLocal, remoteAddr)
 						}
+					}
+
+					// Procesar información adicional enviada por el líder vía broadcast
+					if msg.Tipo == "HEARTBEAT" && msg.Contenido != "" && msg.Host == liderLocal {
+						log.Printf("📢 [BROADCAST-LIDER] %s: %s", msg.Host, msg.Contenido)
 					}
 				}
 			}(conn)
@@ -70,14 +76,14 @@ func ServicioCoordinacion(miID int, dominio, miHost string, chanLider chan strin
 		since := time.Since(ultimoLatido)
 		if !soyLider && (liderLocal == "" || since > config.ElectionTimeout) {
 			if liderLocal != "" {
-				log.Printf("[COORD] Tiempo de espera de líder %s agotado (%v). Iniciando elección...", liderLocal, since)
+				log.Printf("⏳ [COORD] Tiempo de espera de líder %s agotado (%v). Iniciando elección...", liderLocal, since)
 				liderLocal = ""
 				select {
 				case chanLider <- "":
 				default:
 				}
 			}
-			log.Println("[COORD] Sin líder. Iniciando elección...")
+			log.Println("🗳️ [COORD] Sin líder. Iniciando elección...")
 			soyElMasBajo := true
 
 			// Escaneo en paralelo para evitar bloqueos y detectar al líder más rápido
@@ -90,6 +96,8 @@ func ServicioCoordinacion(miID int, dominio, miHost string, chanLider chan strin
 					candidato := fmt.Sprintf("hospital-%d.%s", id, dominio)
 					conn, err := net.DialTimeout("tcp", candidato+config.PuertoServicio, config.DefaultTimeout)
 					if err == nil {
+						remoteIP := conn.RemoteAddr().String()
+						log.Printf("🔍 [COORD] Nodo detectado: %s en %s", candidato, remoteIP)
 						conn.Close()
 						results <- id
 					}
@@ -112,7 +120,7 @@ func ServicioCoordinacion(miID int, dominio, miHost string, chanLider chan strin
 				liderLocal = fmt.Sprintf("hospital-%d.%s", minIDFound, dominio)
 				ultimoLatido = time.Now()
 				soyElMasBajo = false
-				log.Printf("[COORD] Líder encontrado (ID menor): %s", liderLocal)
+				log.Printf("✅ [COORD] Líder encontrado (ID menor): %s", liderLocal)
 				select {
 				case chanLider <- liderLocal:
 				default:
@@ -129,7 +137,7 @@ func ServicioCoordinacion(miID int, dominio, miHost string, chanLider chan strin
 					default:
 					}
 				}
-				log.Printf("[COORD] Yo soy el líder: %s", miHost)
+				log.Printf("👑 [COORD] Yo soy el líder: %s", miHost)
 			}
 		}
 		
@@ -137,12 +145,12 @@ func ServicioCoordinacion(miID int, dominio, miHost string, chanLider chan strin
 		mu.Unlock()
 
 		if currentSoyLider {
-			NotificarPares(miID, dominio, miHost)
+			NotificarPares(miID, dominio, miHost, "Sistema médico sincronizado y operativo")
 		}
 	}
 }
 
-func NotificarPares(miID int, dominio, miHost string) {
+func NotificarPares(miID int, dominio, miHost, info string) {
 	// Semáforo para limitar la concurrencia y evitar saturar el stack TCP de Tailscale
 	sem := make(chan struct{}, 20)
 	for i := 1; i <= config.MaxNodes; i++ {
@@ -164,6 +172,7 @@ func NotificarPares(miID int, dominio, miHost string) {
 				Tipo: "HEARTBEAT",
 				ID:   miID,
 				Host: miHost,
+				Contenido: info,
 			}
 			json.NewEncoder(conn).Encode(msg)
 		}(peer)

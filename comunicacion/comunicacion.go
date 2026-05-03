@@ -75,9 +75,10 @@ func IniciarServidorMedico(host string) {
 		}
 		go func(c net.Conn) {
 			defer c.Close()
+			remoteAddr := c.RemoteAddr().String()
 			var msg Mensaje
 			if err := json.NewDecoder(c).Decode(&msg); err == nil {
-				log.Printf("[SERVER] Datos médicos de %s (ID: %d): %s", msg.Host, msg.ID, msg.Contenido)
+				log.Printf("[SERVER] Datos médicos de %s (%s) (ID: %d): %s", msg.Host, remoteAddr, msg.ID, msg.Contenido)
 			}
 			c.Write([]byte("ACK\n"))
 		}(conn)
