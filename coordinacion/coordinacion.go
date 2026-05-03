@@ -76,6 +76,7 @@ func (c *coordinador) manejarConexion(conn net.Conn) {
 	if msg.ID < c.miID && c.soyLider {
 		log.Printf("📉 [COORD] Detectado líder con mayor prioridad (%s - %s). Abdicando...", msg.Host, remoteAddr)
 		c.soyLider = false
+		c.liderLocal = msg.Host
 		c.actualizarLider(msg.Host)
 	}
 
@@ -83,8 +84,9 @@ func (c *coordinador) manejarConexion(conn net.Conn) {
 	if msg.ID <= c.miID {
 		c.ultimoLatido = time.Now()
 		if c.liderLocal != msg.Host {
+			c.liderLocal = msg.Host
 			c.actualizarLider(msg.Host)
-			log.Printf("🔭 [COORD] Siguiendo a nuevo líder: %s (%s)", c.liderLocal, remoteAddr)
+			log.Printf("🔭 [COORD] Siguiendo a nuevo líder: %s (%s)", msg.Host, remoteAddr)
 		}
 	}
 
@@ -176,10 +178,17 @@ func (c *coordinador) proclamarseLider() {
 
 // actualizarLider envía de forma no bloqueante el nuevo líder al canal.
 func (c *coordinador) actualizarLider(host string) {
+	// Vaciamos el canal antes de enviar la nueva actualización.
+	// Esto garantiza que el módulo de comunicación siempre reciba el líder más fresco
+	// y evita que mensajes antiguos bloqueen la sincronización.
+	select {
+	case <-c.chanLider:
+	default:
+	}
+
 	select {
 	case c.chanLider <- host:
 	default:
-		// Si el canal está lleno, ya hay una actualización pendiente
 	}
 }
 
