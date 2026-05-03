@@ -87,3 +87,5 @@ pct exec 110 -- bash -c "go build ~/node/node.go 1 tail5afc32.ts.net "
 > **NOTE**
 > - La app se ejecutará en el puerto 5000
 > - De acuerdo al numero y dominio de la tailnet el nodo se encontraria como  `hospital-<NUMERO_DE_NODO>.<DOMINIO-TAILNET>:5000`
+
+![Diagrama de Arquitectura](/assets/Arch.excalidraw.svg)
