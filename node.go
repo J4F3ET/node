@@ -39,10 +39,15 @@ func main() {
 
 	// Canal para comunicar cambios de liderazgo entre el módulo de coordinación y el de comunicación
 	chanLider := make(chan string, 1) // Canal con buffer para evitar bloqueos
+	// Canal para enviar mensajes personalizados/manuales entre servicios
+	chanMensajes := make(chan string, 10)
 
 	fmt.Printf("🚀 Nodo [%s] en línea.\n", miHost)
 
 	// Iniciamos los servicios en segundo plano
 	go coordinacion.ServicioCoordinacion(miID, dominio, miHost, chanLider)
-	comunicacion.ServicioComunicacion(miID, miHost, chanLider)
+	// Iniciamos el nuevo servicio de entrada manual en segundo plano
+	go comunicacion.ServicioEntradaManual(chanMensajes)
+	// El servicio de comunicación centraliza el envío automático y el manual
+	comunicacion.ServicioComunicacion(miID, miHost, chanLider, chanMensajes)
 }

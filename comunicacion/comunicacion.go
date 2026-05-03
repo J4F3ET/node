@@ -1,11 +1,13 @@
 package comunicacion
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net"
 	"node/config"
+	"os"
 	"time"
 )
 
@@ -17,48 +19,73 @@ type Mensaje struct {
 	Contenido string `json:"contenido,omitempty"`
 }
 
-// ServicioComunicacion gestiona el ciclo de vida del envío de datos dependiendo del estado del nodo.
-func ServicioComunicacion(miID int, miHost string, chanLider chan string) {
-	var liderActual string
-	tieneLider := false
-	dataSendInterval := 5 * time.Second
+// gestorComunicacion encapsula el estado y la lógica de envío para mejorar la mantenibilidad.
+type gestorComunicacion struct {
+	miID        int
+	miHost      string
+	liderActual string
+	tieneLider  bool
+}
 
-	ticker := time.NewTicker(dataSendInterval)
+// ServicioComunicacion gestiona el ciclo de vida del envío de datos dependiendo del estado del nodo.
+func ServicioComunicacion(miID int, miHost string, chanLider chan string, chanMensajes chan string) {
+	g := &gestorComunicacion{miID: miID, miHost: miHost}
+	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 
 	for {
 		select {
-		// Escucha actualizaciones del estado del líder desde el módulo de coordinación
 		case nuevoLider := <-chanLider:
-			if nuevoLider == "" {
-				liderActual = ""
-				tieneLider = false
-				log.Println("🚨 [COM] Líder perdido. Volviendo a STANDBY.")
-			} else {
-				liderActual = nuevoLider
-				tieneLider = true
-				log.Printf("🔄 [COM] Estado: CON LÍDER (%s)", liderActual)
-			}
+			g.actualizarEstado(nuevoLider)
+		case msgPersonalizado := <-chanMensajes:
+			g.enviar(msgPersonalizado, true)
 		case <-ticker.C:
-			// Si no hay líder conocido, permanecemos en espera
-			if !tieneLider {
+			if !g.tieneLider {
 				log.Println("💤 [COM] Estado: STANDBY (Buscando líder...)")
 				continue
 			}
+			g.enviar("Signos vitales normales (Simulado)", false)
+		}
+	}
+}
 
-			// Si yo soy el líder, no me envío datos a mí mismo, solo proceso localmente
-			if liderActual == miHost {
-				log.Println("👑 [COM] Soy el Líder. Procesando datos locales...")
-				continue
-			}
+func (g *gestorComunicacion) actualizarEstado(host string) {
+	if host == "" {
+		g.liderActual, g.tieneLider = "", false
+		log.Println("🚨 [COM] Líder perdido. Volviendo a STANDBY.")
+		return
+	}
+	g.liderActual, g.tieneLider = host, true
+	log.Printf("🔄 [COM] Estado: CON LÍDER (%s)", host)
+}
 
-			// Envío de datos médicos al líder actual
-			err := EnviarDatosMedicos(liderActual, miHost, miID)
-			if err != nil {
-				log.Printf("🚨 [COM] Líder %s inalcanzable al enviar datos: %v", liderActual, err)
-				// No reseteamos el líder aquí; la coordinación decidirá si el líder murió
-				// por la ausencia de Heartbeats (ElectionTimeout).
-			}
+func (g *gestorComunicacion) enviar(contenido string, esManual bool) {
+	if !g.tieneLider {
+		if esManual { log.Printf("⚠️ [COM] Sin líder. Mensaje descartado: %s", contenido) }
+		return
+	}
+
+	if g.liderActual == g.miHost {
+		prefix := "👑 [COM]"
+		if esManual { log.Printf("%s Procesando mensaje local: %s", prefix, contenido)
+		} else { log.Printf("%s Soy el Líder. Procesando datos locales...", prefix) }
+		return
+	}
+
+	if err := EnviarDatosMedicos(g.liderActual, g.miHost, g.miID, contenido); err != nil {
+		log.Printf("🚨 [COM] Error al enviar a %s: %v", g.liderActual, err)
+	}
+}
+
+
+// ServicioEntradaManual lee de la consola y envía mensajes al canal para ser procesados por ServicioComunicacion.
+func ServicioEntradaManual(chanMensajes chan string) {
+	scanner := bufio.NewScanner(os.Stdin)
+	log.Println("💬 [MANUAL] Sistema de mensajes manuales activo. Escribe algo y presiona Enter para enviarlo al líder.")
+	for scanner.Scan() {
+		texto := scanner.Text()
+		if texto != "" {
+			chanMensajes <- texto
 		}
 	}
 }
@@ -95,7 +122,7 @@ func IniciarServidorMedico(host string) {
 }
 
 // EnviarDatosMedicos encapsula la lógica de conexión y envío de un mensaje de tipo DATA.
-func EnviarDatosMedicos(destino, miHost string, miID int) error {
+func EnviarDatosMedicos(destino, miHost string, miID int, contenido string) error {
 	conn, err := net.DialTimeout("tcp", destino+config.PuertoServicio, 3*time.Second)
 	if err != nil {
 		return fmt.Errorf("error de conexión a %s: %w", destino, err)
@@ -107,7 +134,7 @@ func EnviarDatosMedicos(destino, miHost string, miID int) error {
 		Tipo:      "DATA",
 		ID:        miID,
 		Host:      miHost,
-		Contenido: "Signos vitales normales (Simulado)",
+		Contenido: contenido,
 	}
 
 	err = json.NewEncoder(conn).Encode(msg)
