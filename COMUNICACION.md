@@ -1,6 +1,6 @@
 # Módulo de Comunicación: `comunicacion.go`
 
-Este módulo es el encargado de la transmisión y recepción de datos médicos dentro de la red. Gestiona tanto el cliente que envía la información como el servidor que la recibe cuando el nodo actúa como líder.
+Este módulo gestiona la transmisión de datos médicos automáticos y el sistema de mensajería manual. Implementa un modelo de **Relay (Retransmisión)** donde el líder centraliza y distribuye la información a toda la red.
 
 ## Estructura Universal de Mensaje
 
