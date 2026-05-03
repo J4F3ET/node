@@ -12,6 +12,7 @@ flowchart TB
             L_Coord(("🔄 Coordinación<br>:5001"))
             L_Comm(("📡 Comunicación<br>:5000"))
             L_Server["🖥️ Servidor Médico"]
+            L_Relay{"📢 Relay Logic"}
             
             L_Config -.-> L_Main
             L_Main --> L_Coord
@@ -26,18 +27,21 @@ flowchart TB
             F_Coord(("🔄 Coordinación<br>:5001"))
             F_Comm(("📡 Comunicación<br>:5000"))
             F_Client["💻 Cliente Médico"]
+            F_Server["🖥️ Servidor Médico"]
             
             F_Config -.-> F_Main
             F_Main --> F_Coord
             F_Main --> F_Comm
             F_Coord -. "chanLider<br>(ID Líder)" .-> F_Comm
             F_Comm === F_Client
+            F_Comm === F_Server
         end
 
         %% Conexiones de Red entre Nodos
         L_Coord == "1. Heartbeat Broadcast<br>(TCP/5001)" ===> F_Coord
         F_Coord -. "3. Elección por Timeout<br>(Bully)" .-> L_Coord
-        F_Client == "2. Envío de Datos JSON<br>(TCP/5000)" ===> L_Server
+        F_Client == "2a. Datos/Mensajes Manuales<br>(TCP/5000)" ===> L_Server
+        L_Server --> L_Relay -->| "2b. Retransmisión Global" | F_Server
 
     end
 
@@ -50,7 +54,7 @@ flowchart TB
     class Leader leader;
     class Follower follower;
     class Tailscale tailscale;
-    class L_Main,L_Config,F_Main,F_Config,L_Server,F_Client module;
+    class L_Main,L_Config,F_Main,F_Config,L_Server,F_Server,F_Client module;
 ```
 ## Descripción de Componentes
 
