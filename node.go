@@ -26,8 +26,8 @@ func main() {
 	}
 
 	dominio := os.Args[2]
-	// Usamos hospital- para coincidir con el hostname de Tailscale y los subpaquetes
-	miHost := fmt.Sprintf("hospital-%d.%s", miID, dominio)
+	// Usamos el prefijo configurado para coincidir con el hostname de Tailscale
+	miHost := fmt.Sprintf(config.NodeHostnameFormat, config.NodePrefix, miID, dominio)
 
 	// Verificación de unicidad: ¿Alguien más está usando este ID en la red?
 	// Intentamos conectar al puerto de servicio de nuestro propio hostname esperado

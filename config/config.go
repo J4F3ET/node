@@ -3,6 +3,8 @@ package config
 import "time"
 
 const (
+	NodePrefix         = "hospital"
+	NodeHostnameFormat = "%s-%d.%s"
 	PuertoServicio     = ":5000" // Puerto para recepción de datos médicos
 	PuertoCoordinacion = ":5001" // Puerto para intercambio de latidos y elecciones
 	MaxNodes           = 199     // Límite superior de IDs de nodos en la red
