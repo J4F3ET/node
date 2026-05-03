@@ -19,17 +19,28 @@ type Mensaje struct {
 	Contenido string `json:"contenido,omitempty"`
 }
 
+// Variables de estado global para que el Servidor sepa si debe retransmitir
+var (
+	soyLiderGlobal bool
+	dominioGlobal  string
+	miIDGlobal     int
+)
+
 // gestorComunicacion encapsula el estado y la lógica de envío para mejorar la mantenibilidad.
 type gestorComunicacion struct {
 	miID        int
 	miHost      string
+	dominio     string
 	liderActual string
 	tieneLider  bool
 }
 
 // ServicioComunicacion gestiona el ciclo de vida del envío de datos dependiendo del estado del nodo.
-func ServicioComunicacion(miID int, miHost string, chanLider chan string, chanMensajes chan string) {
-	g := &gestorComunicacion{miID: miID, miHost: miHost}
+func ServicioComunicacion(miID int, miHost string, dominio string, chanLider chan string, chanMensajes chan string) {
+	g := &gestorComunicacion{miID: miID, miHost: miHost, dominio: dominio}
+	dominioGlobal = dominio
+	miIDGlobal = miID
+
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 
@@ -52,10 +63,12 @@ func ServicioComunicacion(miID int, miHost string, chanLider chan string, chanMe
 func (g *gestorComunicacion) actualizarEstado(host string) {
 	if host == "" {
 		g.liderActual, g.tieneLider = "", false
+		soyLiderGlobal = false
 		log.Println("🚨 [COM] Líder perdido. Volviendo a STANDBY.")
 		return
 	}
 	g.liderActual, g.tieneLider = host, true
+	soyLiderGlobal = (host == g.miHost)
 	log.Printf("🔄 [COM] Estado: CON LÍDER (%s)", host)
 }
 
@@ -66,14 +79,26 @@ func (g *gestorComunicacion) enviar(contenido string, esManual bool) {
 	}
 
 	if g.liderActual == g.miHost {
-		prefix := "👑 [COM]"
-		if esManual { log.Printf("%s Procesando mensaje local: %s", prefix, contenido)
-		} else { log.Printf("%s Soy el Líder. Procesando datos locales...", prefix) }
+		if esManual {
+			DifundirMensaje(g.miHost, g.miID, contenido)
+		} else {
+			log.Printf("👑 [COM] Soy el Líder. Procesando datos locales...")
+		}
 		return
 	}
 
 	if err := EnviarDatosMedicos(g.liderActual, g.miHost, g.miID, contenido); err != nil {
 		log.Printf("🚨 [COM] Error al enviar a %s: %v", g.liderActual, err)
+	}
+}
+
+// DifundirMensaje envía un mensaje a todos los nodos de la red excepto a sí mismo.
+func DifundirMensaje(miHost string, miID int, contenido string) {
+	log.Printf("📡 [COM] Difundiendo mensaje a la red: %s", contenido)
+	for i := 1; i <= config.MaxNodes; i++ {
+		if i == miID { continue }
+		peer := fmt.Sprintf(config.NodeHostnameFormat, config.NodePrefix, i, dominioGlobal)
+		go EnviarDatosMedicos(peer, miHost, miID, contenido)
 	}
 }
 
@@ -115,6 +140,11 @@ func IniciarServidorMedico(host string) {
 			// Decodificamos el mensaje JSON recibido
 			if err := json.NewDecoder(c).Decode(&msg); err == nil {
 				log.Printf("[SERVER] Datos médicos de %s (%s) (ID: %d): %s", msg.Host, remoteAddr, msg.ID, msg.Contenido)
+				
+				// Si somos el líder y recibimos un mensaje de otro, lo retransmitimos a todos (Broadcast)
+				if soyLiderGlobal && msg.Host != host {
+					DifundirMensaje(msg.Host, msg.ID, msg.Contenido)
+				}
 			}
 			c.Write([]byte("ACK\n"))
 		}(conn)

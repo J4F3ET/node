@@ -170,7 +170,6 @@ func (c *coordinador) proclamarseLider() {
 	c.liderLocal = c.miHost
 	if !c.soyLider {
 		c.soyLider = true
-		go comunicacion.IniciarServidorMedico(c.miHost)
 		c.actualizarLider(c.miHost)
 	}
 	log.Printf("👑 [COORD] Yo soy el líder: %s", c.miHost)
