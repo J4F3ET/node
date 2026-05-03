@@ -36,8 +36,8 @@ func ServicioCoordinacion(miID int, dominio, miHost string, chanLider chan strin
 	// Iniciar servidor de escucha en segundo plano
 	go c.servidorCoordinacion()
 
-	// Bucle de monitoreo de salud
-	ticker := time.NewTicker(1 * time.Second)
+	// Ajustamos el ticker para respetar el intervalo de latidos configurado
+	ticker := time.NewTicker(config.HeartbeatInterval)
 	for range ticker.C {
 		c.revisarSaludLider()
 	}
@@ -108,6 +108,7 @@ func (c *coordinador) revisarSaludLider() {
 	}
 
 	if c.soyLider {
+		// El líder envía latidos para mantener su posición y sincronizar a los demás
 		c.notificarPares("Sistema médico sincronizado y operativo")
 	}
 }
@@ -184,6 +185,7 @@ func (c *coordinador) actualizarLider(host string) {
 
 // notificarPares envía un HEARTBEAT a todos los posibles nodos de la red.
 func (c *coordinador) notificarPares(info string) {
+	log.Printf("📤 [COORD] Difundiendo latidos de salud a la red...")
 	// Semáforo para limitar la concurrencia y evitar saturar el stack TCP de Tailscale
 	sem := make(chan struct{}, 20)
 	for i := 1; i <= config.MaxNodes; i++ {
@@ -200,6 +202,9 @@ func (c *coordinador) notificarPares(info string) {
 				return
 			}
 			defer conn.Close()
+			
+			// Establecer un tiempo límite corto para la escritura
+			conn.SetWriteDeadline(time.Now().Add(config.DefaultTimeout))
 			
 			msg := comunicacion.Mensaje{
 				Tipo:      "HEARTBEAT",
