@@ -9,41 +9,43 @@ flowchart TB
         subgraph Leader ["👑 Nodo Líder (ID Menor)"]
             L_Main["⚙️ node.go"]
             L_Config["📄 config.go"]
-            L_Coord(("🔄 Coordinación\n:5001"))
-            L_Comm(("📡 Comunicación\n:5000"))
+            L_Coord(("🔄 Coordinación<br>:5001"))
+            L_Comm(("📡 Comunicación<br>:5000"))
             L_Server["🖥️ Servidor Médico"]
             
             L_Config -.-> L_Main
-            L_Main --> L_Coord & L_Comm
-            L_Coord -. "chanLider\n(Soy Yo)" .-> L_Comm
+            L_Main --> L_Coord
+            L_Main --> L_Comm
+            L_Coord -. "chanLider<br>(Soy Yo)" .-> L_Comm
             L_Comm === L_Server
         end
 
         subgraph Follower ["🏥 Nodo Seguidor (ID Mayor)"]
             F_Main["⚙️ node.go"]
             F_Config["📄 config.go"]
-            F_Coord(("🔄 Coordinación\n:5001"))
-            F_Comm(("📡 Comunicación\n:5000"))
+            F_Coord(("🔄 Coordinación<br>:5001"))
+            F_Comm(("📡 Comunicación<br>:5000"))
             F_Client["💻 Cliente Médico"]
             
             F_Config -.-> F_Main
-            F_Main --> F_Coord & F_Comm
-            F_Coord -. "chanLider\n(ID Líder)" .-> F_Comm
+            F_Main --> F_Coord
+            F_Main --> F_Comm
+            F_Coord -. "chanLider<br>(ID Líder)" .-> F_Comm
             F_Comm === F_Client
         end
 
         %% Conexiones de Red entre Nodos
-        L_Coord == "1. Heartbeat Broadcast\n(TCP/5001)" ===> F_Coord
-        F_Coord -. "3. Elección por Timeout\n(Bully)" .-> L_Coord
-        F_Client == "2. Envío de Datos JSON\n(TCP/5000)" ===> L_Server
+        L_Coord == "1. Heartbeat Broadcast<br>(TCP/5001)" ===> F_Coord
+        F_Coord -. "3. Elección por Timeout<br>(Bully)" .-> L_Coord
+        F_Client == "2. Envío de Datos JSON<br>(TCP/5000)" ===> L_Server
 
     end
 
-    %% Estilos Personalizados
-    classDef leader fill:#e6f4ea,stroke:#1e8e3e,stroke-width:2px,color:#000;
-    classDef follower fill:#e8f0fe,stroke:#1a73e8,stroke-width:2px,color:#000;
-    classDef tailscale fill:#f8f9fa,stroke:#80868b,stroke-width:2px,stroke-dasharray: 5 5,color:#000;
-    classDef module fill:#ffffff,stroke:#cccccc,stroke-width:1px,color:#333333;
+    %% Estilos GitHub-Safe (Sin forzar color de texto para soportar Dark Mode)
+    classDef leader fill:#e6f4ea,stroke:#1e8e3e,stroke-width:2px;
+    classDef follower fill:#e8f0fe,stroke:#1a73e8,stroke-width:2px;
+    classDef tailscale fill:#f8f9fa,stroke:#80868b,stroke-width:2px,stroke-dasharray: 5 5;
+    classDef module fill:#ffffff,stroke:#cccccc,stroke-width:1px;
 
     class Leader leader;
     class Follower follower;
