@@ -2,12 +2,33 @@
 
 Este proyecto implementa un sistema distribuido en Go para la coordinación y envío de datos médicos en tiempo real. Utiliza un algoritmo de elección de líder basado en prioridades (ID más bajo) y comunicación TCP sobre una red privada Tailscale.
 
+## 🚀 Características Principales
+- **Alta Disponibilidad:** Elección automática de líder si el actual falla.
+- **Prioridad por ID:** El nodo con el ID más bajo siempre es el líder preferido (Algoritmo de Bully modificado).
+- **Seguridad de Red:** Túneles cifrados punto a punto mediante **Tailscale**.
+- **Resolución Dinámica:** Uso de **MagicDNS** para evitar el hardcoding de direcciones IP.
+- **Multiplataforma:** Compatible con Linux (contenedores LXC) y Windows.
+
+## 🏗️ Estructura del Proyecto
+- `/comunicacion`: Gestión de envío y recepción de JSON médicos (Puerto 5000).
+- `/coordinacion`: Lógica de elección, latidos y estado del cluster (Puerto 5001).
+- `/config`: Constantes globales, tiempos de espera y límites.
+- `node.go`: Punto de entrada principal y validación de identidad.
+
 ## Requisitos previos
 - Proxmox VE
 - Cuenta en Tailscale
+- Go 1.20 o superior
+
+## 🛠️ Ejecución
+Para iniciar un nodo, utiliza el siguiente comando:
+```bash
+go run node.go <ID_DEL_NODO> <DOMINIO_TAILNET>
+```
+Ejemplo: `go run node.go 5 tail5afc32.ts.net`
 
 ## Configuración del Nodo (LXC)
-- Primero crea LXC con el siguiente comando:
+- Crea el contenedor LXC:
 ```bash
 pct create 110 local:vztmpl/debian-12-standard_12.7-1_amd64.tar.zst \
   -hostname nodo-tailscale \

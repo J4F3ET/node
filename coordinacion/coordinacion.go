@@ -11,13 +11,14 @@ import (
 	"time"
 )
 
+// ServicioCoordinacion implementa el algoritmo de elección de líder (Bully modificado) y el monitoreo de latidos.
 func ServicioCoordinacion(miID int, dominio, miHost string, chanLider chan string) {
 	var mu sync.Mutex
 	liderLocal := ""
 	ultimoLatido := time.Now()
 	soyLider := false
 
-	// Escuchar latidos de líderes (Broadcast simulado)
+	// Goroutine para escuchar mensajes entrantes en el puerto de coordinación
 	go func() {
 		ln, err := net.Listen("tcp4", config.PuertoCoordinacion)
 		if err != nil {
@@ -38,7 +39,7 @@ func ServicioCoordinacion(miID int, dominio, miHost string, chanLider chan strin
 					mu.Lock()
 					defer mu.Unlock()
 
-					// Lógica de supresión de líderes duplicados
+					// Lógica de supresión: Si aparece alguien con ID menor, dejo de ser líder
 					if msg.ID < miID && soyLider {
 						log.Printf("📉 [COORD] Detectado líder con mayor prioridad (%s - %s). Abdicando...", msg.Host, remoteAddr)
 						soyLider = false
@@ -49,6 +50,7 @@ func ServicioCoordinacion(miID int, dominio, miHost string, chanLider chan strin
 						}
 					}
 					
+					// Actualizamos el timestamp del último latido si el mensaje viene de un líder válido
 					if msg.ID <= miID { // Aceptamos al líder si tiene igual o mayor prioridad
 						ultimoLatido = time.Now()
 						if liderLocal != msg.Host {
@@ -73,6 +75,7 @@ func ServicioCoordinacion(miID int, dominio, miHost string, chanLider chan strin
 	ticker := time.NewTicker(1 * time.Second)
 	for range ticker.C {
 		mu.Lock()
+		// Verificamos si el líder ha expirado o si no tenemos ninguno
 		since := time.Since(ultimoLatido)
 		if !soyLider && (liderLocal == "" || since > config.ElectionTimeout) {
 			if liderLocal != "" {
@@ -109,6 +112,7 @@ func ServicioCoordinacion(miID int, dominio, miHost string, chanLider chan strin
 				close(results)
 			}()
 
+			// Identificamos el ID más bajo de los nodos que respondieron
 			minIDFound := miID
 			for id := range results {
 				if id < minIDFound {
@@ -116,6 +120,7 @@ func ServicioCoordinacion(miID int, dominio, miHost string, chanLider chan strin
 				}
 			}
 
+			// Si encontramos un nodo con ID menor, lo seguimos
 			if minIDFound < miID {
 				liderLocal = fmt.Sprintf("hospital-%d.%s", minIDFound, dominio)
 				ultimoLatido = time.Now()
@@ -127,10 +132,12 @@ func ServicioCoordinacion(miID int, dominio, miHost string, chanLider chan strin
 				}
 			}
 
+			// Si somos el ID más bajo disponible, asumimos el liderazgo
 			if soyElMasBajo {
 				liderLocal = miHost
 				if !soyLider {
 					soyLider = true
+					// El líder debe habilitar el servidor para recibir datos médicos
 					go comunicacion.IniciarServidorMedico(miHost)
 					select {
 					case chanLider <- miHost:
@@ -144,12 +151,14 @@ func ServicioCoordinacion(miID int, dominio, miHost string, chanLider chan strin
 		currentSoyLider := soyLider
 		mu.Unlock()
 
+		// Si soy líder, notifico a todos los nodos de mi existencia
 		if currentSoyLider {
 			NotificarPares(miID, dominio, miHost, "Sistema médico sincronizado y operativo")
 		}
 	}
 }
 
+// NotificarPares envía un HEARTBEAT a todos los posibles nodos de la red.
 func NotificarPares(miID int, dominio, miHost, info string) {
 	// Semáforo para limitar la concurrencia y evitar saturar el stack TCP de Tailscale
 	sem := make(chan struct{}, 20)
